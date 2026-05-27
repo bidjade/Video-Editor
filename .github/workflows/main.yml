@@ -24,7 +24,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y ffmpeg
-        pip install demucs requests
+        pip install demucs requests torchcodec soundfile
 
     - name: Process Media
       env:
