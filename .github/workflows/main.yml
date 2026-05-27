@@ -36,42 +36,47 @@ jobs:
       run: |
         cat << 'EOF' > script.py
         import os
-        import requests
-        import subprocess
         import glob
+        import requests
 
-        bot_token = os.environ['BOT_TOKEN']
-        chat_id = os.environ['CHAT_ID']
-        file_url = os.environ['FILE_URL']
-        file_name = os.environ['FILE_NAME']
-        file_type = os.environ['FILE_TYPE']
+        BOT_TOKEN = os.environ['BOT_TOKEN']
+        CHAT_ID = os.environ['CHAT_ID']
+        FILE_URL = os.environ['FILE_URL']
+        FILE_NAME = os.environ['FILE_NAME']
+        FILE_TYPE = os.environ['FILE_TYPE']
+        WORKDIR = 'music_workdir/'
+        os.makedirs(WORKDIR, exist_ok=True)
 
-        res = requests.get(file_url)
-        with open(file_name, 'wb') as f:
+        res = requests.get(FILE_URL)
+        input_path = os.path.join(WORKDIR, FILE_NAME)
+        with open(input_path, 'wb') as f:
             f.write(res.content)
 
-        subprocess.run(['ffmpeg', '-i', file_name, '-vn', '-acodec', 'pcm_s16le', '-ar', '44100', '-ac', '2', 'track_temp.wav', '-y'])
-        subprocess.run(['demucs', '-n', 'htdemucs_thin', '--two-stems', 'vocals', 'track_temp.wav', '-o', 'output'])
+        base_name = os.path.basename(input_path).rsplit('.', 1)[0]
+        audio_temp = os.path.join(WORKDIR, "track_temp.wav")
 
-        # البحث التلقائي عن ملفvocals.wav لتجنب أخطاء المسارات
-        search_path = glob.glob("output/htdemucs_thin/**/vocals.wav", recursive=True)
+        os.system(f'ffmpeg -i "{input_path}" -vn -acodec pcm_s16le -ar 44100 -ac 2 "{audio_temp}" -y')
+        os.system(f'demucs --two-stems vocals "{audio_temp}" -o "{WORKDIR}"')
+
+        search_path = glob.glob(os.path.join(WORKDIR, "**", "vocals.wav"), recursive=True)
         if not search_path:
-            raise FileNotFoundError("Demucs failed to create vocals.wav")
+            raise Exception("Demucs failed to produce vocals file.")
         vocals_path = search_path[0]
-        
-        base_name = file_name.rsplit('.', 1)[0]
 
-        if file_type == 'video':
-            final_file = f"{base_name}_clean.mp4"
-            subprocess.run(['ffmpeg', '-i', file_name, '-i', vocals_path, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-shortest', final_file, '-y'])
-            url = f"https://api.telegram.org/bot{bot_token}/sendVideo"
-            with open(final_file, 'rb') as f:
-                requests.post(url, data={'chat_id': chat_id, 'caption': '✅ Music removed from video'}, files={'video': f})
+        if input_path.lower().endswith(('.mp4', '.mkv', '.mov', '.avi')) or FILE_TYPE == 'video':
+            final_video = os.path.join(WORKDIR, f"{base_name}_clean.mp4")
+            os.system(f'ffmpeg -i "{input_path}" -i "{vocals_path}" -map 0:v -map 1:a -c:v copy -c:a aac -shortest "{final_video}" -y')
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
+            with open(final_video, 'rb') as video:
+                requests.post(url, data={'chat_id': CHAT_ID, 'caption': '✅ Music removed from video'}, files={'video': video})
         else:
-            final_file = f"{base_name}_vocals.mp3"
-            subprocess.run(['ffmpeg', '-i', vocals_path, final_file, '-y'])
-            url = f"https://api.telegram.org/bot{bot_token}/sendAudio"
-            with open(final_file, 'rb') as f:
-                requests.post(url, data={'chat_id': chat_id, 'caption': '✅ Music removed from audio'}, files={'audio': f})
+            final_audio = os.path.join(WORKDIR, f"{base_name}_vocals.mp3")
+            os.system(f'ffmpeg -i "{vocals_path}" "{final_audio}" -y')
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendAudio"
+            with open(final_audio, 'rb') as audio:
+                requests.post(url, data={'chat_id': CHAT_ID, 'caption': '✅ Music removed from audio'}, files={'audio': audio})
+
+        if os.path.exists(audio_temp): os.remove(audio_temp)
+        if os.path.exists(input_path): os.remove(input_path)
         EOF
         python script.py
