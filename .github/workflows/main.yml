@@ -34,6 +34,7 @@ jobs:
         FILE_NAME: ${{ github.event.inputs.file_name }}
         FILE_TYPE: ${{ github.event.inputs.file_type }}
       run: |
+        cat << 'EOF' > script.py
         import os
         import requests
         import subprocess
@@ -66,4 +67,5 @@ jobs:
             url = f"https://api.telegram.org/bot{bot_token}/sendAudio"
             with open(final_file, 'rb') as f:
                 requests.post(url, data={'chat_id': chat_id, 'caption': '✅ Music removed from audio'}, files={'audio': f})
-        shell: python
+        EOF
+        python script.py
