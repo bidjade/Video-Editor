@@ -1,0 +1,69 @@
+name: Remove Music
+on:
+  workflow_dispatch:
+    inputs:
+      chat_id:
+        required: true
+      file_url:
+        required: true
+      file_name:
+        required: true
+      file_type:
+        required: true
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+        pip install demucs requests
+
+    - name: Process Media
+      env:
+        BOT_TOKEN: "7916665951:AAE1so0RTgRkDrk1kIFa3kbWkBnTi2jf-AE"
+        CHAT_ID: ${{ github.event.inputs.chat_id }}
+        FILE_URL: ${{ github.event.inputs.file_url }}
+        FILE_NAME: ${{ github.event.inputs.file_name }}
+        FILE_TYPE: ${{ github.event.inputs.file_type }}
+      run: |
+        import os
+        import requests
+        import subprocess
+
+        bot_token = os.environ['BOT_TOKEN']
+        chat_id = os.environ['CHAT_ID']
+        file_url = os.environ['FILE_URL']
+        file_name = os.environ['FILE_NAME']
+        file_type = os.environ['FILE_TYPE']
+
+        res = requests.get(file_url)
+        with open(file_name, 'wb') as f:
+            f.write(res.content)
+
+        subprocess.run(['ffmpeg', '-i', file_name, '-vn', '-acodec', 'pcm_s16le', '-ar', '44100', '-ac', '2', 'track_temp.wav', '-y'])
+        subprocess.run(['demucs', '-n', 'htdemucs_thin', '--two-stems', 'vocals', 'track_temp.wav', '-o', 'output'])
+
+        vocals_path = "output/htdemucs_thin/track_temp/vocals.wav"
+        base_name = file_name.rsplit('.', 1)[0]
+
+        if file_type == 'video':
+            final_file = f"{base_name}_clean.mp4"
+            subprocess.run(['ffmpeg', '-i', file_name, '-i', vocals_path, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-shortest', final_file, '-y'])
+            url = f"https://api.telegram.org/bot{bot_token}/sendVideo"
+            with open(final_file, 'rb') as f:
+                requests.post(url, data={'chat_id': chat_id, 'caption': '✅ Music removed from video'}, files={'video': f})
+        else:
+            final_file = f"{base_name}_vocals.mp3"
+            subprocess.run(['ffmpeg', '-i', vocals_path, final_file, '-y'])
+            url = f"https://api.telegram.org/bot{bot_token}/sendAudio"
+            with open(final_file, 'rb') as f:
+                requests.post(url, data={'chat_id': chat_id, 'caption': '✅ Music removed from audio'}, files={'audio': f})
+        shell: python
